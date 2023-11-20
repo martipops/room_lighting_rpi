@@ -1,0 +1,35 @@
+use rs_ws281x::ControllerBuilder;
+use rs_ws281x::ChannelBuilder;
+use rs_ws281x::StripType;
+use std::thread::sleep;
+
+
+fn main() {
+    // Construct a single channel controller. Note that the
+    // Controller is initialized by default and is cleaned up on drop
+
+    let mut controller = ControllerBuilder::new()
+        .freq(800_000)
+        .dma(10)
+        .channel(
+            0, // Channel Index
+            ChannelBuilder::new()
+                .pin(12) 
+                .count(460) // Number of LEDs
+                .strip_type(StripType::Ws2812)
+                .brightness(200) // default: 255
+                .build(),
+        )
+        .build()
+        .unwrap();
+    loop {
+        for j in 0..255{
+            for (i, led) in controller.leds_mut(0).into_iter().enumerate() {
+                *led = [j as u8, ((j+i)%255) as u8, 0, 0];
+            }
+            controller.render().unwrap();
+            sleep(std::time::Duration::from_millis(10))
+        }
+        
+    }
+}

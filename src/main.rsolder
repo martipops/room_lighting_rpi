@@ -1,0 +1,87 @@
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+use warp::Filter;
+use rs_ws281x::ControllerBuilder;
+use rs_ws281x::ChannelBuilder;
+use rs_ws281x::StripType;
+
+
+// Define a struct for your shared state
+#[derive(Debug, Clone, Copy)]
+struct LedState {
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+type SharedState = Arc<Mutex<LedState>>;
+
+// Function to control the LEDs based on the current state
+fn control_leds(state: SharedState) {
+    let mut controller = ControllerBuilder::new()
+        .freq(800_000)
+        .dma(10)
+        .channel(
+            0, // Channel Index
+            ChannelBuilder::new()
+                .pin(12) // GPIO 10 = SPI0 MOSI
+                .count(460) // Number of LEDs
+                .strip_type(StripType::Ws2812)
+                .brightness(255) // default: 255
+                .build(),
+        )
+        .build()
+        .unwrap();
+    let leds = controller.leds_mut(0);
+    let current_state = state.lock().unwrap();
+    for j in 0..255{
+        for (i, led) in controller.leds_mut(0).into_iter().enumerate() {
+            *led = [current_state.red, ((i as u8)+j) % 255, current_state.blue, 0];
+        }
+        controller.render().unwrap();
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let state = Arc::new(Mutex::new(LedState {
+        red: 255,
+        green: 0,
+        blue: 0,
+    }));
+    let server_state = Arc::clone(&state);
+
+    // Setup HTTP server route
+    let post_route = warp::post()
+        .and(warp::path("update"))
+        .and(warp::body::json())
+        .and(warp::any().map(move || server_state.clone()))
+        .map(|body: serde_json::Value, state: SharedState| {
+            let red = body["red"].as_u64().unwrap_or(255) as u8;
+            let green = body["green"].as_u64().unwrap_or(0) as u8;
+            let blue = body["blue"].as_u64().unwrap_or(0) as u8;
+
+            let mut state = state.lock().unwrap();
+            state.red = red;
+            state.green = green;
+            state.blue = blue;
+
+            println!("State updated: {:?}", *state);
+            warp::reply::json(&serde_json::json!({"status": "success"}))
+        });
+
+    // Start the HTTP server
+    tokio::spawn(async move {
+        warp::serve(post_route)
+            .run(([127, 0, 0, 1], 3030))
+            .await;
+    });
+
+    // Start the LED control loop in a separate thread
+    let led_thread = thread::spawn(move || {
+        control_leds(state)
+    });
+
+    led_thread.join().unwrap();
+}
