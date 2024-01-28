@@ -1,6 +1,6 @@
 use rand::Rng;
 
-const STAR_SPAWN_RATE: f64 = 0.1;
+const STAR_SPAWN_RATE: f64 = 0.2;
 const COMET_SPAWN_RATE: f64 = 0.01;
 const COMET_MIN_TAILSIZE: i32 = 5;
 const COMET_MAX_TAILSIZE: i32 = 30;
@@ -13,6 +13,7 @@ struct Comet {
     tail_size: i32,
     tail_max: i32,
     heat: u8,
+    is_dying: bool,
     direction: i32,
     spawning: bool,
     color: [u8; 4],
@@ -23,6 +24,7 @@ struct Star {
     loc: i32,
     heat: u8,
     color: [u8; 4],
+    is_dying: bool,
 }
 
 #[derive(Debug)]
@@ -66,7 +68,14 @@ impl Twinkler {
     fn update_stars(&mut self) {
         for star in self.stars.iter_mut() {
             if star.heat > 0 {
-                star.heat = (star.heat as f32 * DEATH_RATE) as u8;
+                if star.is_dying {
+                    star.heat = (star.heat as f32 * DEATH_RATE) as u8;
+                } else {
+                    star.heat = (((255-star.heat) as f32 * (DEATH_RATE)) as u8).abs_diff(255)
+                }
+                if (star.heat > 250) {
+                    star.is_dying = true;
+                }
             }
             self.led_vec[star.loc as usize] = star.color.map(|x| (x as f32 * (star.heat as f32 / 255.0)) as u8);
         }
@@ -76,7 +85,16 @@ impl Twinkler {
     fn update_comets(&mut self) {
         for comet in self.comets.iter_mut() {
             comet.head_loc += comet.direction;
-            if comet.heat > 0 {comet.heat = (comet.heat as f32 * DEATH_RATE) as u8}
+            if comet.heat > 0 {
+                if comet.is_dying {
+                    comet.heat = (comet.heat as f32 * DEATH_RATE) as u8;
+                } else {
+                    comet.heat = (((255-comet.heat) as f32 * (DEATH_RATE)) as u8).abs_diff(255)
+                }
+                if (comet.heat > 250) {
+                    comet.is_dying = true;
+                }
+            }
             for i in 0..comet.tail_max {
                 let m = (comet.head_loc + i * comet.direction * -1)
                     .clamp(0, crate::led_driver::LED_COUNT as i32 -1) as usize;
@@ -95,8 +113,9 @@ impl Twinkler {
     fn spawn_star(&mut self) {
         self.stars.push(Star {
             loc: self.rng.gen_range(0..crate::led_driver::LED_COUNT as i32),
-            heat: 255,
+            heat: 1,
             color: [255u8, 100, 0, 0],
+            is_dying: false
         });
     }
 
@@ -106,10 +125,11 @@ impl Twinkler {
             head_loc: loc,
             tail_size: 0,
             tail_max: self.rng.gen_range(COMET_MIN_TAILSIZE..COMET_MAX_TAILSIZE),
-            heat: 255,
+            heat: 1,
+            is_dying: false,
             direction: if self.rng.gen_bool(0.5) { 1 } else { -1 },
             spawning: true,
-            color: [0u8, 10, 0, 0],
+            color: [0u8, 0, 255, 0],
         });
     }
 
